@@ -13,7 +13,7 @@
 <p>Uma lista para acompanhar, comparar e compartilhar. Casas e apartamentos de <b>1 ou 2 quartos</b>, em bairros próximos ao Centro, com busca ampliada para <b>R$ 1.000 a R$ 3.200 de aluguel anunciado</b>. Lofts ficam identificados como extras. O total com taxas pode ultrapassar essa faixa.</p>
 <div class="stats" id="stats"></div>
 <details id="audit-summary" class="note" hidden><summary id="audit-title"></summary><p>“Anúncio online” indica que a página individual de locação abriu na revisão; confirme a disponibilidade com a imobiliária. Falhas de acesso ficam como pendentes. Os itens retirados deixam os cards, mas suas escolhas salvas permanecem no navegador.</p><ul id="audit-removed"></ul></details>
-<p class="note">“Novo na lista” significa adicionado a este documento, não recém-publicado. Preços incompletos são subtotais: confirme as taxas indicadas. Pets só são marcados como aceitos quando o anúncio diz isso.</p>
+<p class="note">“Novo na lista” identifica ofertas adicionadas há menos de 15 dias, até você marcá-las como vistas. A data de inclusão permanece em cada card; ela não indica a publicação do anúncio. Preços incompletos são subtotais: confirme as taxas indicadas. Pets só são marcados como aceitos quando o anúncio diz isso.</p>
 <p class="note">Veja as fotos pelas setas dos cards ou deslize no celular. Clique na imagem para ampliá-la. As fotos vêm do anúncio original e podem ficar indisponíveis; a lista baixada precisa de internet para exibi-las.</p>
 </header>
 <p id="storage-warning" hidden>Este navegador não permitiu salvar suas escolhas. Elas funcionam nesta sessão; use “Salvar minhas escolhas” antes de fechar.</p>
@@ -44,7 +44,7 @@
 <div id="cards"></div><p id="empty" class="empty" hidden>Nenhum imóvel combina com estes filtros. Experimente ampliar o valor ou limpar os filtros.</p>
 <noscript>Ative o JavaScript do navegador para usar os filtros e ver a lista interativa.</noscript>
 <details class="tools"><summary>Minhas escolhas e dicas de uso</summary>
-<p>Use ★ para guardar um imóvel e “Fixar” para colocá-lo no topo. Anote o resultado de uma visita ou o que falta perguntar. Os selos de novidade permanecem até você marcar as novidades como vistas.</p>
+<p>Use ★ para guardar um imóvel e “Fixar” para colocá-lo no topo. Anote o resultado de uma visita ou o que falta perguntar. Os selos de novidade desaparecem ao completar 15 dias desde a inclusão, ou antes se você marcar as novidades como vistas. A contagem segue o horário de Cabo Frio.</p>
 <p>Para enviar só suas opções favoritas, clique em “Favoritos” e depois em “Baixar lista filtrada para compartilhar”. Cada arquivo é uma cópia da lista naquele momento; novas buscas atualizam o documento original.</p>
 <p>Para levar seus favoritos, fixados e notas a outro navegador ou manter uma cópia de segurança:</p>
 <button id="backup">Salvar minhas escolhas</button><button id="restore">Importar minhas escolhas</button><input id="import" type="file" accept=".json,application/json">
@@ -69,7 +69,14 @@ function cleanState(raw){return {version:1,favorites:Array.isArray(raw.favorites
 try{const raw=localStorage.getItem(KEY);if(raw)state=cleanState(JSON.parse(raw));localStorage.setItem(KEY,JSON.stringify(state));}catch(e){$('storage-warning').hidden=false;}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){$('storage-warning').hidden=false;}}
 let view='all',visibleRows=[],toastTimer;
-const isNew=row=>!row.baseline&&!state.seen.includes(row.id);
+const newBadgeDays=15;
+const calendarFormatter=new Intl.DateTimeFormat('en',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'});
+function currentCalendarDate(){const parts=Object.fromEntries(calendarFormatter.formatToParts(new Date()).map(p=>[p.type,p.value]));return `${parts.year}-${parts.month}-${parts.day}`;}
+function calendarDay(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value||''))return NaN;const timestamp=Date.parse(value+'T00:00:00Z');return Number.isFinite(timestamp)&&new Date(timestamp).toISOString().slice(0,10)===value?timestamp/86400000:NaN;}
+let badgeDate=currentCalendarDate();
+function isNewAt(row,today){const age=calendarDay(today)-calendarDay(row.added_date);return !row.baseline&&!state.seen.includes(row.id)&&age>=0&&age<newBadgeDays;}
+const isNew=row=>isNewAt(row,badgeDate);
+function refreshNewBadges(){const today=currentCalendarDate();if(today!==badgeDate){badgeDate=today;render();}}
 const group=row=>row.status==='Loft/kitnet'?'Extra':/Casa|Sobrado/i.test(row.type)?'Casa':'Apartamento';
 function toast(text){$('message').textContent=text;$('message').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('message').hidden=true,4000);}
 function options(id,values){for(const value of [...new Set(values)].sort((a,b)=>a.localeCompare(b,'pt-BR'))){const option=document.createElement('option');option.value=value;option.textContent=value;$(id).append(option);}}
@@ -120,9 +127,10 @@ function render(){
   const fav=state.favorites.includes(r.id),pin=state.pins.includes(r.id),fresh=isNew(r);
   return `<article class="card ${fresh?'is-new':''} ${pin?'is-pinned':''}" data-id="${esc(r.id)}" data-rent="${r.rent??''}" data-total="${r.total_known??''}" data-bairro="${esc(r.bairro)}">
    ${galleryHtml(r)}
-   <div class="badges">${fresh?'<span class="badge new">Novo na lista · '+date(r.added_date)+'</span>':''}${pin?'<span class="badge pending">Fixado</span>':''}${r.featured?'<span class="badge pending">Indicado por você</span>':''}<span class="badge ${petGroup(r)==='Sim'?'yes':petGroup(r)==='Não'?'no':''}">Pets: ${esc(r.pet)}</span>${r.status!=='Principal'?'<span class="badge pending">'+esc(r.status)+'</span>':''}${r.availability?'<span class="badge '+(r.availability==='online'?'yes':'pending')+'">'+(r.availability==='online'?'Anúncio online · '+date(r.last_checked_date):'Revalidação pendente')+'</span>':''}</div>
+   <div class="badges">${fresh?'<span class="badge new">Novo na lista</span>':''}${pin?'<span class="badge pending">Fixado</span>':''}${r.featured?'<span class="badge pending">Indicado por você</span>':''}<span class="badge ${petGroup(r)==='Sim'?'yes':petGroup(r)==='Não'?'no':''}">Pets: ${esc(r.pet)}</span>${r.status!=='Principal'?'<span class="badge pending">'+esc(r.status)+'</span>':''}${r.availability?'<span class="badge '+(r.availability==='online'?'yes':'pending')+'">'+(r.availability==='online'?'Anúncio online · '+date(r.last_checked_date):'Revalidação pendente')+'</span>':''}</div>
    <h2><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.agency)} · ${esc(r.code)}</a></h2>
    <div class="meta">${esc(r.type)} · ${esc(r.bairro)} · ${r.beds} ${r.beds===1?'quarto':'quartos'}${r.area?' · '+esc(r.area)+' m²':''}</div>
+   <p class="meta"><b>Adicionado em <time datetime="${esc(r.added_date)}">${esc(date(r.added_date))}</time></b></p>
    ${r.address?'<p class="meta">'+esc(r.address)+'</p>':''}
    <p>Aluguel/valor anunciado: <b>${money(r.rent)}</b></p><div class="price">${esc(r.total)}</div>
    <p class="muted">${r.total_complete?'Total informado no anúncio':'Subtotal ou valor com pendência'}</p>
@@ -130,7 +138,7 @@ function render(){
    ${r.audit_change?'<p class="badge pending">'+esc(r.audit_change)+'</p>':''}
    ${r.availability==='pending'?'<p class="note"><b>Revisão de '+date(r.last_attempted_date)+':</b> '+esc(r.availability_note)+'</p>':''}
    ${r.guarantee?'<p><b>Garantia:</b> '+esc(r.guarantee)+'</p>':''}
-   <p class="muted">Na lista desde ${date(r.added_date)} · Verificado em ${date(r.last_checked_date)}${r.baseline?' · lista inicial':''}</p>
+   <p class="muted">Verificado em ${date(r.last_checked_date)}${r.baseline?' · lista inicial':''}</p>
    <div class="actions"><button data-action="fav" aria-pressed="${fav}" aria-label="${fav?'Remover favorito':'Favoritar'} ${esc(r.agency+' '+r.code)}">${fav?'★ Favorito':'☆ Favoritar'}</button><button data-action="pin" aria-pressed="${pin}">${pin?'Desafixar':'Fixar no topo'}</button><button data-action="copy">Copiar link</button></div>
    <details class="personal" ${state.notes[r.id]?'open':''}><summary>Minhas anotações ${state.notes[r.id]?'•':''}</summary><label>Anotações sobre ${esc(r.code)}<textarea data-note="${esc(r.id)}" maxlength="10000" placeholder="Visita, contato, pontos positivos ou perguntas pendentes…">${esc(state.notes[r.id]||'')}</textarea></label></details>
   </article>`;
@@ -162,5 +170,8 @@ $('backup').addEventListener('click',()=>download('minhas-escolhas-cabo-frio.jso
 $('restore').addEventListener('click',()=>$('import').click());
 $('import').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2000000)throw Error('Arquivo muito grande');const raw=JSON.parse(await file.text());if(raw.version!==1||!Array.isArray(raw.favorites)||!Array.isArray(raw.pins))throw Error('Formato inválido');const imported=cleanState(raw);for(const key of ['favorites','pins','seen'])state[key]=[...new Set([...state[key],...imported[key]])];state.notes={...state.notes,...imported.notes};save();render();toast('Escolhas importadas.');}catch(error){toast('Não foi possível importar. Use o arquivo de escolhas salvo pela página.');}e.target.value='';});
 window.addEventListener('storage',event=>{if(event.key===KEY&&event.newValue){try{state=cleanState(JSON.parse(event.newValue));render();}catch(e){}}});
+window.addEventListener('focus',refreshNewBadges);
+window.addEventListener('pageshow',refreshNewBadges);
+setInterval(refreshNewBadges,60000);
 render();
 </script></body></html>
